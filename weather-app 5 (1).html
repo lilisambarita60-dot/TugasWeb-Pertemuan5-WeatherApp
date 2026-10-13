@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Weather App</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#e0f2fe;--card:#fff;--text:#0f172a;--muted:#64748b;--primary:#0284c7;--border:#cbd5e1;--errb:#fee2e2;--errt:#991b1b;--chip:#f1f5f9}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0c1a2b;--card:#1e293b;--text:#f1f5f9;--muted:#94a3b8;--border:#475569;--errb:#7f1d1d;--errt:#fecaca;--chip:#334155}}
+:root[data-theme="dark"]{--bg:#0c1a2b;--card:#1e293b;--text:#f1f5f9;--muted:#94a3b8;--border:#475569;--errb:#7f1d1d;--errt:#fecaca;--chip:#334155}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;justify-content:center;padding:16px;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.weather-app{width:100%;max-width:420px;background:var(--card);padding:24px 20px;border-radius:16px;box-shadow:0 6px 28px rgba(0,0,0,.12);align-self:flex-start}
+h1{margin:0 0 16px;font-size:1.5rem;text-align:center}
+form{display:flex;gap:8px}
+input{flex:1;min-width:0;padding:12px;border:1px solid var(--border);border-radius:10px;font-size:1rem;background:var(--card);color:var(--text)}
+button{padding:12px 16px;border:0;border-radius:10px;background:var(--primary);color:#fff;font-size:1rem;font-weight:600;cursor:pointer}
+.note{margin:10px 0 0;font-size:.8rem;color:var(--muted);text-align:center}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.chips button{padding:6px 12px;font-size:.85rem;background:var(--chip);color:var(--text);font-weight:500}
+.hidden{display:none!important}
+#loading{margin-top:18px;text-align:center;color:var(--muted)}
+.alert{margin-top:18px;padding:10px 14px;border-radius:10px;background:var(--errb);color:var(--errt);font-size:.92rem}
+#weatherResult{margin-top:20px;text-align:center}
+#weatherResult h2{margin:0;font-size:1.4rem}
+.icon{font-size:4rem;line-height:1.2;min-height:100px;display:flex;align-items:center;justify-content:center}
+.icon img{width:100px;height:100px}
+.temp{margin:0;font-size:3rem;font-weight:700}
+#description{margin:4px 0 14px;color:var(--muted);text-transform:capitalize}
+.stats{display:flex;justify-content:center;gap:16px;flex-wrap:wrap;font-size:.95rem}
+#unitToggle{margin-top:16px;background:var(--chip);color:var(--text);font-size:.9rem}
+</style>
+</head>
+<body>
+<div class="weather-app">
+  <h1>🌤️ Weather App</h1>
+
+  <form id="searchForm">
+    <input type="text" id="cityInput" placeholder="Masukkan nama kota..." autocomplete="off">
+    <button type="submit">Cari</button>
+  </form>
+  <p id="modeNote" class="note hidden"></p>
+
+  <div id="history" class="chips"></div>
+
+  <div id="loading" class="hidden">⏳ Memuat data...</div>
+  <div id="error" class="alert hidden"></div>
+
+  <div id="weatherResult" class="hidden">
+    <h2 id="cityName"></h2>
+    <div class="icon"><img id="weatherIcon" alt="ikon cuaca" class="hidden"><span id="emoji"></span></div>
+    <p id="temperature" class="temp"></p>
+    <p id="description"></p>
+    <div class="stats"><span id="humidity"></span><span id="wind"></span></div>
+    <button type="button" id="unitToggle">Ganti ke °F</button>
+  </div>
+</div>
+
+<script>
+// ====== KONFIGURASI ======
+// Ganti dengan API key OpenWeatherMap kamu. Selama masih 'YOUR_API_KEY_HERE',
+// aplikasi berjalan dalam MODE DEMO memakai data contoh (tanpa internet).
+const API_KEY = 'YOUR_API_KEY_HERE';
+const BASE_URL = 'https://api.openweathermap.org/data/2.5/weather';
+const DEMO = API_KEY === 'YOUR_API_KEY_HERE';
+const HISTORY_KEY = 'weather-history';
+
+// Data contoh untuk mode demo
+const MOCK = {
+  medan:   { name: 'Medan',   main: { temp: 31.5, humidity: 75 }, weather: [{ description: 'berawan',       icon: '02d' }], wind: { speed: 3.5 } },
+  jakarta: { name: 'Jakarta', main: { temp: 32.1, humidity: 70 }, weather: [{ description: 'cerah berawan', icon: '03d' }], wind: { speed: 4.1 } },
+  bandung: { name: 'Bandung', main: { temp: 26.0, humidity: 82 }, weather: [{ description: 'hujan ringan',  icon: '10d' }], wind: { speed: 2.2 } },
+  tokyo:   { name: 'Tokyo',   main: { temp: 19.4, humidity: 60 }, weather: [{ description: 'cerah',         icon: '01d' }], wind: { speed: 5.0 } },
+};
+const EMOJI = { '01': '☀️', '02': '⛅', '03': '☁️', '04': '☁️', '09': '🌧️', '10': '🌦️', '11': '⛈️', '13': '❄️', '50': '🌫️' };
+
+// ====== ELEMEN DOM ======
+const $ = (sel) => document.querySelector(sel);
+const form = $('#searchForm');
+const input = $('#cityInput');
+const loading = $('#loading');
+const errorBox = $('#error');
+const result = $('#weatherResult');
+const historyBox = $('#history');
+
+let unit = 'C';
+let current = null;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// ====== FETCH DATA ======
+const fetchWeather = async (city) => {
+  if (DEMO) {
+    await sleep(700); // simulasi loading
+    const data = MOCK[city.toLowerCase()];
+    if (!data) throw new Error(`Kota "${city}" tidak ditemukan`);
+    return data;
+  }
+  try {
+    const url = `${BASE_URL}?q=${encodeURIComponent(city)}&appid=${API_KEY}&units=metric&lang=id`;
+    const res = await fetch(url);
+    if (res.status === 404) throw new Error(`Kota "${city}" tidak ditemukan`);
+    if (res.status === 401) throw new Error('API key tidak valid atau belum aktif.');
+    if (!res.ok) throw new Error('Server error. Coba lagi nanti.');
+    return await res.json();
+  } catch (err) {
+    if (err instanceof TypeError) {
+      throw new Error('Network error. Periksa koneksi internet Anda.');
+    }
+    throw err;
+  }
+};
+
+const getWeather = async (city) => {
+  try {
+    showLoading();
+    const data = await fetchWeather(city);
+    displayWeather(data);
+    saveHistory(data.name);
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    loading.classList.add('hidden');
+  }
+};
+
+// ====== TAMPILAN ======
+const showLoading = () => {
+  loading.classList.remove('hidden');
+  errorBox.classList.add('hidden');
+  result.classList.add('hidden');
+};
+
+const showError = (msg) => {
+  errorBox.textContent = `⚠️ ${msg}`;
+  errorBox.classList.remove('hidden');
+  result.classList.add('hidden');
+};
+
+const formatTemp = (celsius) =>
+  unit === 'C' ? `${Math.round(celsius)}°C` : `${Math.round(celsius * 9 / 5 + 32)}°F`;
+
+const displayWeather = (data) => {
+  current = data;
+  const { icon, description } = data.weather[0];
+  $('#cityName').textContent = data.name;
+  $('#temperature').textContent = formatTemp(data.main.temp);
+  $('#description').textContent = description;
+  $('#humidity').textContent = `💧 Kelembaban: ${data.main.humidity}%`;
+  $('#wind').textContent = `💨 Angin: ${data.wind.speed} m/s`;
+
+  const emoji = $('#emoji');
+  const img = $('#weatherIcon');
+  emoji.textContent = EMOJI[icon.slice(0, 2)] ?? '🌡️';
+  if (DEMO) {
+    img.classList.add('hidden');
+  } else {
+    img.src = `https://openweathermap.org/img/wn/${icon}@2x.png`;
+    img.onload = () => { img.classList.remove('hidden'); emoji.classList.add('hidden'); };
+    img.onerror = () => { img.classList.add('hidden'); emoji.classList.remove('hidden'); };
+  }
+  result.classList.remove('hidden');
+};
+
+// ====== RIWAYAT PENCARIAN (LocalStorage) ======
+const loadHistory = () => {
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY)) ?? [];
+  } catch {
+    return [];
+  }
+};
+
+const saveHistory = (name) => {
+  const list = [name, ...loadHistory().filter((c) => c.toLowerCase() !== name.toLowerCase())].slice(0, 5);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch { /* abaikan */ }
+  renderHistory(list);
+};
+
+const renderHistory = (list = loadHistory()) => {
+  const chips = list.map((city) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.city = city;
+    b.textContent = `🕘 ${city}`;
+    return b;
+  });
+  historyBox.replaceChildren(...chips);
+};
+
+// ====== EVENT ======
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const city = input.value.trim();
+  if (!city) return showError('Masukkan nama kota terlebih dahulu.');
+  getWeather(city);
+});
+
+historyBox.addEventListener('click', (e) => {
+  const city = e.target.dataset.city;
+  if (city) { input.value = city; getWeather(city); }
+});
+
+$('#unitToggle').addEventListener('click', () => {
+  unit = unit === 'C' ? 'F' : 'C';
+  $('#unitToggle').textContent = unit === 'C' ? 'Ganti ke °F' : 'Ganti ke °C';
+  if (current) $('#temperature').textContent = formatTemp(current.main.temp);
+});
+
+// ====== INIT ======
+if (DEMO) {
+  const note = $('#modeNote');
+  note.textContent = 'Mode demo (data contoh). Coba: Medan, Jakarta, Bandung, Tokyo. Kota lain = tidak ditemukan.';
+  note.classList.remove('hidden');
+}
+renderHistory();
+</script>
+</body>
+</html>
